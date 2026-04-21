@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>呼吸伴侣 - 换髋康复交互训练</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 防止手机端长按选中文字和默认下拉刷新 */
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            -webkit-user-select: none;
+            user-select: none;
+            overscroll-behavior-y: none;
+            touch-action: pan-x pan-y;
+            background-color: #f1f5f9; /* slate-100 */
+        }
+        
+        /* 手机模拟器容器限制 */
+        .app-container {
+            max-width: 480px;
+            margin: 0 auto;
+            background-color: #f8fafc;
+            height: 100vh;
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            box-shadow: 0 0 20px rgba(0,0,0,0.05);
+            overflow: hidden;
+        }
+
+        .scrollable-content {
+            flex: 1;
+            overflow-y: auto;
+            padding-bottom: 80px; /* 为底部导航留出空间 */
+        }
+
+        .scrollable-content::-webkit-scrollbar {
+            display: none;
+        }
+
+        /* 底部导航栏样式 */
+        .bottom-nav {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 70px;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-top: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            z-index: 50;
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #94a3b8;
+            width: 33%;
+            height: 100%;
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+
+        .nav-item.active {
+            color: #0ea5e9;
+            transform: translateY(-2px);
+        }
+
+        .nav-icon {
+            font-size: 1.5rem;
+            margin-bottom: 2px;
+        }
+
+        .nav-text {
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        /* 交互呼吸圆环画布容器 */
+        .breathing-canvas-container {
+            position: relative;
+            width: 100%;
+            height: 300px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* 交互按钮样式 */
+        .action-btn {
+            transition: transform 0.1s;
+            touch-action: none; /* 防止多点触控缩放 */
+            user-select: none;
+        }
+        .action-btn:active {
+            transform: scale(0.95);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+        
+        <!-- 顶部标题栏 -->
+        <header class="bg-sky-500 text-white pt-6 pb-4 px-5 rounded-b-3xl shadow-sm z-10 flex-shrink-0">
+            <div class="flex justify-between items-center mt-2">
+                <div>
+                    <h1 class="text-xl font-bold">康复交互训练</h1>
+                    <p class="text-sky-100 text-xs mt-1">深呼吸，唤醒肺部活力</p>
+                </div>
+                <div class="text-3xl">🫁</div>
+            </div>
+        </header>
+
+        <!-- 内容滚动区 (单一训练视图) -->
+        <div class="scrollable-content px-5 pt-6 relative" id="mainContent">
+
+            <div class="text-center mb-4">
+                <h2 class="text-2xl font-bold text-slate-800" id="modeTitle">腹式缩唇呼吸</h2>
+                <p class="text-slate-500 text-sm mt-1 min-h-[40px]" id="modeDesc">吸气短，呼气长。给肺泡“充气”。</p>
+            </div>
+
+            <div class="bg-white rounded-3xl shadow-sm border border-slate-100 p-4 mb-6 relative overflow-hidden">
+                <!-- 呼吸状态提示文字 -->
+                <div class="absolute top-4 left-0 w-full text-center z-10 pointer-events-none">
+                    <h3 class="text-xl font-bold text-sky-600 tracking-widest transition-opacity duration-300" id="breathInstruction">准备就绪</h3>
+                    <p class="text-slate-400 text-xs mt-1" id="breathSubText">按住下方按钮开始</p>
+                </div>
+
+                <!-- 交互画布 -->
+                <div class="breathing-canvas-container">
+                    <canvas id="breathingCanvas" width="280" height="280"></canvas>
+                </div>
+                
+                <!-- 训练统计 -->
+                <div class="flex justify-between items-center mt-2 px-4 border-t border-slate-50 pt-3">
+                    <div class="text-center w-1/2 border-r border-slate-100">
+                        <p class="text-[10px] text-slate-400">今日完成 (组)</p>
+                        <p class="text-xl font-bold text-slate-700 mt-1" id="sessionCount">0</p>
+                    </div>
+                    <div class="text-center w-1/2">
+                        <p class="text-[10px] text-slate-400" id="targetLabel">当前进度 (次)</p>
+                        <p class="text-xl font-bold text-sky-500 mt-1"><span id="repCount">0</span><span class="text-sm text-slate-300" id="repTarget">/10</span></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 核心交互按钮 -->
+            <button id="interactBtn" class="action-btn w-full bg-sky-500 text-white rounded-2xl py-4 text-xl font-bold shadow-lg shadow-sky-200 flex justify-center items-center gap-2">
+                👆 <span id="btnText">长按 吸气</span>
+            </button>
+            <p class="text-center text-xs text-slate-400 mt-4 px-2" id="interactionHint">提示：手指松开即自动切换为缓慢呼气</p>
+
+        </div>
+
+        <!-- 底部导航 (直接切换训练模式) -->
+        <nav class="bottom-nav">
+            <div class="nav-item active" data-mode="mode1" onclick="switchModeFromNav(this, 'mode1')">
+                <div class="nav-icon">🌸</div>
+                <div class="nav-text">缩唇呼吸</div>
+            </div>
+            <div class="nav-item" data-mode="mode2" onclick="switchModeFromNav(this, 'mode2')">
+                <div class="nav-icon">🗣️</div>
+                <div class="nav-text">哈气排痰</div>
+            </div>
+            <div class="nav-item" data-mode="mode3" onclick="switchModeFromNav(this, 'mode3')">
+                <div class="nav-icon text-xl mb-1">🎈</div>
+                <div class="nav-text">吹气球</div>
+            </div>
+        </nav>
+
+    </div>
+
+    <script>
+        // --- 全局状态与配置 ---
+        const state = {
+            training: {
+                currentMode: 'mode1',
+                configs: {
+                    mode1: { title: '🌸 腹式缩唇呼吸', desc: '吸气短，呼气长。\n给底部的肺泡重新“充气”。', target: 10, btnInit: '长按 吸气', hint: '提示：手指松开即自动切换为缓慢呼气' },
+                    mode2: { title: '🗣️ “哈气”排痰法', desc: '深吸一口气填满肺部，\n然后短促有力地哈出3次。', target: 5, btnInit: '长按 深吸气', hint: '提示：吸满后松开，然后快速点击按钮哈气' },
+                    mode3: { title: '🎈 吹气球大挑战', desc: '深吸气后，\n一口气长按把气球吹到最大。', target: 5, btnInit: '长按 吹气球', hint: '提示：请先深吸气，然后长按按钮呼气' }
+                },
+                stats: { mode1: {reps:0, sessions:0}, mode2: {reps:0, sessions:0}, mode3: {reps:0, sessions:0} },
+                isHolding: false,
+                phase: 'idle', 
+                circleRadius: 40,
+                minRadius: 40,
+                maxRadius: 110,
+                huffsLeft: 0 
+            }
+        };
+
+        // --- 底部导航切换逻辑 ---
+        function switchModeFromNav(clickedEl, mode) {
+            // 防止在交互中途切换模式
+            if (state.training.phase !== 'idle' && state.training.circleRadius > state.training.minRadius + 5) {
+                alert("请先完成当前的呼吸动作！");
+                return;
+            }
+
+            // 更新导航栏 UI
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            clickedEl.classList.add('active');
+
+            // 更新状态
+            state.training.currentMode = mode;
+            const config = state.training.configs[mode];
+            const stats = state.training.stats[mode];
+            
+            // 更新视图文本
+            document.getElementById('modeTitle').innerText = config.title;
+            document.getElementById('modeDesc').innerText = config.desc;
+            document.getElementById('interactionHint').innerText = config.hint;
+            document.getElementById('repTarget').innerText = '/' + config.target;
+            document.getElementById('repCount').innerText = stats.reps;
+            document.getElementById('sessionCount').innerText = stats.sessions;
+            
+            resetTrainingPhase();
+        }
+
+        function resetTrainingPhase() {
+            const tr = state.training;
+            tr.phase = 'idle';
+            tr.isHolding = false;
+            tr.circleRadius = tr.minRadius;
+            
+            updateInstruction("准备就绪", "按住下方按钮开始", "text-sky-600");
+            updateBtn(tr.configs[tr.currentMode].btnInit, "bg-sky-500 text-white shadow-sky-200");
+        }
+
+        // --- Canvas 渲染与动画 ---
+        const bCanvas = document.getElementById('breathingCanvas');
+        const bCtx = bCanvas.getContext('2d');
+        const btnInteract = document.getElementById('interactBtn');
+        const instructionTitle = document.getElementById('breathInstruction');
+        const subText = document.getElementById('breathSubText');
+        const btnText = document.getElementById('btnText');
+        
+        let animationFrameId;
+        let lastTime = 0;
+
+        function drawBreathingCircle() {
+            bCtx.clearRect(0, 0, bCanvas.width, bCanvas.height);
+            const centerX = bCanvas.width / 2;
+            const centerY = bCanvas.height / 2;
+            const tr = state.training;
+
+            // 绘制虚线参考圈
+            bCtx.beginPath();
+            bCtx.arc(centerX, centerY, tr.maxRadius + 10, 0, Math.PI * 2);
+            bCtx.strokeStyle = 'rgba(148, 163, 184, 0.3)';
+            bCtx.lineWidth = 2; bCtx.setLineDash([5, 5]); bCtx.stroke(); bCtx.setLineDash([]);
+
+            // 绘制动态圆
+            bCtx.beginPath();
+            bCtx.arc(centerX, centerY, tr.circleRadius, 0, Math.PI * 2);
+            
+            let emoji = "👃";
+            if (tr.currentMode === 'mode1') {
+                if (tr.phase === 'inhaling') { bCtx.fillStyle = 'rgba(14, 165, 233, 0.2)'; bCtx.strokeStyle = 'rgba(14, 165, 233, 0.8)'; emoji = "👃"; }
+                else if (tr.phase === 'exhaling') { bCtx.fillStyle = 'rgba(16, 185, 129, 0.2)'; bCtx.strokeStyle = 'rgba(16, 185, 129, 0.8)'; emoji = "💨"; }
+                else { bCtx.fillStyle = 'rgba(226, 232, 240, 0.5)'; bCtx.strokeStyle = 'rgba(148, 163, 184, 0.5)'; }
+            } else if (tr.currentMode === 'mode2') {
+                if (tr.phase === 'inhaling') { bCtx.fillStyle = 'rgba(245, 158, 11, 0.2)'; bCtx.strokeStyle = 'rgba(245, 158, 11, 0.8)'; emoji = "👃"; }
+                else if (tr.phase === 'huffing_ready') { bCtx.fillStyle = 'rgba(245, 158, 11, 0.4)'; bCtx.strokeStyle = 'rgba(245, 158, 11, 1)'; emoji = "🗣️"; }
+                else { bCtx.fillStyle = 'rgba(226, 232, 240, 0.5)'; bCtx.strokeStyle = 'rgba(148, 163, 184, 0.5)'; emoji = "🗣️"; }
+            } else if (tr.currentMode === 'mode3') {
+                if (tr.phase === 'blowing') { bCtx.fillStyle = 'rgba(239, 68, 68, 0.2)'; bCtx.strokeStyle = 'rgba(239, 68, 68, 0.8)'; emoji = "🎈"; }
+                else if (tr.phase === 'deflating') { bCtx.fillStyle = 'rgba(248, 113, 113, 0.1)'; bCtx.strokeStyle = 'rgba(248, 113, 113, 0.4)'; emoji = "🎈"; }
+                else { bCtx.fillStyle = 'rgba(226, 232, 240, 0.5)'; bCtx.strokeStyle = 'rgba(148, 163, 184, 0.5)'; emoji = "🎈"; }
+            }
+            
+            bCtx.fill(); bCtx.lineWidth = 4; bCtx.stroke();
+            
+            bCtx.font = "36px Arial"; bCtx.textAlign = "center"; bCtx.textBaseline = "middle";
+            bCtx.fillText(emoji, centerX, centerY);
+        }
+
+        function animateBreathing(timestamp) {
+            if (!lastTime) lastTime = timestamp;
+            const deltaTime = timestamp - lastTime;
+            lastTime = timestamp;
+            const tr = state.training;
+            const radiusRange = tr.maxRadius - tr.minRadius;
+
+            // --- Mode 1: 缩唇呼吸 (2s吸, 4s呼) ---
+            if (tr.currentMode === 'mode1') {
+                if (tr.isHolding && tr.phase === 'inhaling') {
+                    tr.circleRadius += (radiusRange / 2000) * deltaTime;
+                    if (tr.circleRadius >= tr.maxRadius) {
+                        tr.circleRadius = tr.maxRadius;
+                        updateInstruction("保持住！", "可以松开手指缓慢呼气了", "text-amber-500");
+                        if (navigator.vibrate) navigator.vibrate(50);
+                    }
+                } else if (!tr.isHolding && tr.phase === 'exhaling') {
+                    tr.circleRadius -= (radiusRange / 4000) * deltaTime;
+                    if (tr.circleRadius <= tr.minRadius) completeRep();
+                }
+            } 
+            // --- Mode 2: 哈气排痰 (2s吸, 点击哈出) ---
+            else if (tr.currentMode === 'mode2') {
+                if (tr.isHolding && tr.phase === 'inhaling') {
+                    tr.circleRadius += (radiusRange / 1500) * deltaTime;
+                    if (tr.circleRadius >= tr.maxRadius) {
+                        tr.circleRadius = tr.maxRadius;
+                        tr.phase = 'huffing_ready';
+                        tr.huffsLeft = 3;
+                        updateInstruction("肺已充满", "请松开手指，准备哈气", "text-amber-500");
+                        if (navigator.vibrate) navigator.vibrate(50);
+                    }
+                }
+            }
+            // --- Mode 3: 吹气球 (3s吹满) ---
+            else if (tr.currentMode === 'mode3') {
+                if (tr.isHolding && tr.phase === 'blowing') {
+                    tr.circleRadius += (radiusRange / 3000) * deltaTime;
+                    if (tr.circleRadius >= tr.maxRadius) {
+                        tr.circleRadius = tr.maxRadius;
+                        tr.phase = 'idle';
+                        tr.isHolding = false;
+                        if (navigator.vibrate) navigator.vibrate([50, 50, 100]);
+                        completeRep();
+                    }
+                } else if (!tr.isHolding && tr.phase === 'deflating') {
+                    tr.circleRadius -= (radiusRange / 500) * deltaTime; // 快速漏气
+                    if (tr.circleRadius <= tr.minRadius) {
+                        tr.circleRadius = tr.minRadius;
+                        tr.phase = 'idle';
+                        updateBtn("长按 重新吹", "bg-sky-500 text-white shadow-sky-200");
+                    }
+                }
+            }
+
+            drawBreathingCircle();
+            animationFrameId = requestAnimationFrame(animateBreathing);
+        }
+
+        // --- 交互处理 (兼容触控与鼠标) ---
+        function handlePointerDown(e) {
+            e.preventDefault();
+            const tr = state.training;
+            tr.isHolding = true;
+
+            if (tr.currentMode === 'mode1') {
+                tr.phase = 'inhaling';
+                updateInstruction("吸气... 闻花香", "肚子慢慢鼓起来", "text-sky-600");
+                updateBtn("松开 切换为呼气", "bg-slate-200 text-slate-600");
+            } 
+            else if (tr.currentMode === 'mode2') {
+                if (tr.phase === 'idle' || tr.phase === 'inhaling') {
+                    tr.phase = 'inhaling';
+                    updateInstruction("深吸气...", "用力把肺填满", "text-amber-500");
+                    updateBtn("松开 准备哈气", "bg-slate-200 text-slate-600");
+                } else if (tr.phase === 'huffing_ready') {
+                    // 点击执行一次哈气
+                    tr.circleRadius -= (tr.maxRadius - tr.minRadius) / 3;
+                    tr.huffsLeft--;
+                    updateInstruction("哈！", `再次点击，剩余 ${tr.huffsLeft} 次`, "text-orange-600");
+                    updateBtn(`点击 哈气！ (${tr.huffsLeft})`, "bg-orange-500 text-white shadow-orange-200");
+                    if (navigator.vibrate) navigator.vibrate(30);
+                    
+                    if (tr.huffsLeft <= 0) completeRep();
+                }
+            }
+            else if (tr.currentMode === 'mode3') {
+                tr.phase = 'blowing';
+                updateInstruction("用力吹...", "一口气把气球吹到虚线处", "text-red-500");
+                updateBtn("松开 气球会漏气", "bg-red-200 text-red-700");
+            }
+        }
+
+        function handlePointerUp(e) {
+            e.preventDefault();
+            const tr = state.training;
+            tr.isHolding = false;
+
+            if (tr.currentMode === 'mode1' && tr.phase === 'inhaling') {
+                if (tr.circleRadius > tr.minRadius + 15) {
+                    tr.phase = 'exhaling';
+                    updateInstruction("呼气... 吹蜡烛", "缩起嘴唇，比吸气更缓慢地吐气", "text-emerald-600");
+                    updateBtn("请缓慢吐完气...", "bg-emerald-500 text-white shadow-emerald-200 cursor-not-allowed");
+                } else {
+                    tr.phase = 'idle'; tr.circleRadius = tr.minRadius;
+                    updateInstruction("吸气太短", "请长按深吸气", "text-orange-500");
+                    updateBtn("重新长按 吸气", "bg-sky-500 text-white shadow-sky-200");
+                }
+            } 
+            else if (tr.currentMode === 'mode2') {
+                if (tr.phase === 'inhaling') {
+                    if (tr.circleRadius >= tr.maxRadius - 5) {
+                        tr.phase = 'huffing_ready';
+                        updateInstruction("准备就绪", "快速点击下方按钮哈气", "text-amber-600");
+                        updateBtn("点击 哈气 (3)", "bg-orange-500 text-white shadow-orange-200");
+                    } else {
+                        tr.phase = 'idle'; tr.circleRadius = tr.minRadius;
+                        updateInstruction("气量不足", "请长按吸满整口气", "text-orange-500");
+                        updateBtn("重新长按 吸气", "bg-sky-500 text-white shadow-sky-200");
+                    }
+                }
+            }
+            else if (tr.currentMode === 'mode3' && tr.phase === 'blowing') {
+                tr.phase = 'deflating';
+                updateInstruction("漏气了", "没吹满就松手气球会瘪掉", "text-slate-400");
+            }
+        }
+
+        // --- 辅助方法 ---
+        function completeRep() {
+            const tr = state.training;
+            tr.phase = 'idle';
+            tr.circleRadius = tr.minRadius;
+            
+            const stats = tr.stats[tr.currentMode];
+            const config = tr.configs[tr.currentMode];
+            stats.reps++;
+            document.getElementById('repCount').innerText = stats.reps;
+            
+            updateInstruction("完成一次", "干得好！准备好后再次开始", "text-emerald-500");
+            updateBtn(config.btnInit, "bg-sky-500 text-white shadow-sky-200");
+            
+            if (stats.reps >= config.target) {
+                stats.reps = 0;
+                stats.sessions++;
+                document.getElementById('repCount').innerText = stats.reps;
+                document.getElementById('sessionCount').innerText = stats.sessions;
+                
+                // 使用短暂延时，让动画画完最后一帧再弹出提示
+                setTimeout(() => {
+                    alert(`🎉 太棒了！您已完成一组【${config.title.split(' ')[1]}】！请休息一下。`);
+                }, 100);
+            }
+        }
+
+        function updateInstruction(title, sub, colorClass) {
+            instructionTitle.innerText = title;
+            subText.innerText = sub;
+            instructionTitle.className = `text-xl font-bold tracking-widest ${colorClass}`;
+        }
+        
+        function updateBtn(text, classes) {
+            btnText.innerText = text;
+            btnInteract.className = `action-btn w-full rounded-2xl py-4 text-xl font-bold flex justify-center items-center gap-2 ${classes}`;
+        }
+
+        // --- 事件绑定 ---
+        btnInteract.addEventListener('mousedown', handlePointerDown);
+        btnInteract.addEventListener('touchstart', handlePointerDown, {passive: false});
+        window.addEventListener('mouseup', handlePointerUp);
+        window.addEventListener('touchend', handlePointerUp);
+
+        // --- 初始化 ---
+        document.addEventListener('DOMContentLoaded', () => {
+            // 初始化标题和状态
+            const initialNav = document.querySelector('.nav-item[data-mode="mode1"]');
+            switchModeFromNav(initialNav, 'mode1');
+            
+            // 启动动画循环
+            drawBreathingCircle();
+            animationFrameId = requestAnimationFrame(animateBreathing);
+        });
+
+    </script>
+</body>
+</html>
